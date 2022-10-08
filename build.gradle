@@ -1,0 +1,30 @@
+plugins {
+    id 'java'
+}
+
+group 'com.code.noteme.api'
+version '1.0-SNAPSHOT'
+
+repositories {
+    mavenCentral()
+}
+//implementation 'org.slf4j:jcl-over-slf4j:${slf4j.version}'
+
+dependencies {
+    implementation 'io.vertx:vertx-web:4.3.4'
+    implementation 'io.vertx:vertx-mongo-client:4.3.4'
+    implementation 'org.slf4j:slf4j-api:2.0.3'
+    implementation 'org.slf4j:slf4j-simple:2.0.3'
+    implementation 'org.slf4j:jcl-over-slf4j:2.0.3'
+    implementation 'org.springframework.security:spring-security-crypto:5.7.3'
+    implementation 'com.auth0:java-jwt:4.0.0'
+    implementation 'io.vertx:vertx-mail-client:4.3.4'
+    implementation 'org.jetbrains:annotations:23.0.0'
+    implementation 'io.vertx:vertx-config:4.3.4'
+    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.9.0'
+    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.9.0'
+}
+
+test {
+    useJUnitPlatform()
+}

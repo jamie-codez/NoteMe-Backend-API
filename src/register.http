@@ -1,0 +1,9 @@
+POST http://localhost:8000/register
+Content-Type: application/json
+
+{
+  "username": "James Omondi",
+  "email": "cruiseomondi90@gmail.com",
+  "password": "Password-123",
+  "image-url": "image_url"
+}
