@@ -110,3 +110,5 @@ lint/tmp/
 # Android Profiling
 *.hprof
 
+/src/requests/
+/src/config.yaml

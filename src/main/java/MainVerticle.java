@@ -2,9 +2,6 @@ import com.auth0.jwt.JWT;
 import com.auth0.jwt.JWTVerifier;
 import com.auth0.jwt.algorithms.Algorithm;
 import com.auth0.jwt.interfaces.DecodedJWT;
-import io.vertx.config.ConfigRetriever;
-import io.vertx.config.ConfigRetrieverOptions;
-import io.vertx.config.ConfigStoreOptions;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.DeploymentOptions;
 import io.vertx.core.Vertx;
@@ -28,31 +25,19 @@ public class MainVerticle extends AbstractVerticle {
     public static final String NOTES_DB = "notes";
     public static final String JWT_DB = "jwt";
     public static final String ACTIVATION_CODE_DB = "activation-code-db";
-    public static int PORT;
-    public static String APP_PASSWORD;
-    public static JsonObject conf;
+    private DeploymentOptions options;
 
     @Override
     public void start() throws Exception {
         super.start();
-        ConfigStoreOptions fileStore = new ConfigStoreOptions()
-                .setType("file")
-                .setOptional(true)
-                .setConfig(new JsonObject().put("host","http://127.0.0.1").put("port",9000).put("path","/conf"));
-        ConfigStoreOptions configStoreOptions = new ConfigStoreOptions().setType("sys");
-        ConfigRetrieverOptions configOptions = new ConfigRetrieverOptions().addStore(fileStore).addStore(configStoreOptions);
-        ConfigRetriever retriever = ConfigRetriever.create(vertx, configOptions);
-        DeploymentOptions options = new DeploymentOptions().setConfig(new JsonObject().put("http.port", 8000));
-        retriever.getConfig(ar -> {
-            if (ar.succeeded()) {
-                conf = ar.result();
-//                PORT = ar.result().getInteger("http.port");
-//                APP_PASSWORD = ar.result().getString("app_password");
-            } else if (ar.failed()){
-                logger.error("ERROR: Configs did not load"+ar.cause().getMessage());
-            }
-        });
-        JsonObject dbConfig = new JsonObject().put("db_name", "note_me").put("connection_string", "mongodb://localhost:27017");
+        options = new DeploymentOptions().setConfig(new JsonObject()
+                .put("http.port", 8000)
+                .put("host_name", "smtp.google.com")
+                .put("username", "cruiseomondi90@gmail.com")
+                .put("app_password", "rxksecgkmogjnlyv\n"));
+        JsonObject dbConfig = new JsonObject()
+                .put("db_name", "note_me")
+                .put("connection_string", "mongodb://localhost:27017");
         mongoClient = MongoClient.create(vertx, dbConfig);
         Router router = Router.router(vertx);
         router.get("/").handler(this::handlePing);
@@ -68,10 +53,10 @@ public class MainVerticle extends AbstractVerticle {
         router.get("/notes").handler(this::getMyNotes);
         router.put("/notes/update").handler(this::updateNote);
         router.delete("/notes/delete").handler(this::deleteNotes);
-        vertx.createHttpServer().requestHandler(router).listen(conf.getInteger("http.port", 8001), ar -> {
+        vertx.createHttpServer().requestHandler(router).listen(options.getConfig().getInteger("http.port"), ar -> {
             if (ar.succeeded()) {
-                System.out.println("> INFO: Server running on port: " + conf.getInteger("http.port", 8001));
-                logger.debug("> INFO: Server running on port: " + conf.getInteger("http.port", 8001));
+                System.out.println("> INFO: Server running on port: " + options.getConfig().getInteger("http.port", 8001));
+                logger.debug("> INFO: Server running on port: " + options.getConfig().getInteger("http.port", 8001));
             } else if (ar.failed()) {
                 System.out.println("> ERROR: Error starting server...");
                 logger.debug("> ERROR: Error starting server...");
@@ -82,7 +67,7 @@ public class MainVerticle extends AbstractVerticle {
     private void handlePing(RoutingContext rc) {
         rc.response().setStatusCode(200)
                 .putHeader("content-type", "application/json")
-                .end(new JsonObject().put("message", "Server running on port:" + conf.getInteger("http.port", 8001)).encodePrettily());
+                .end(new JsonObject().put("message", "Server running on port:" + options.getConfig().getInteger("http.port", 8001)).encodePrettily());
         logger.info("Ping route");
     }
 
@@ -100,10 +85,11 @@ public class MainVerticle extends AbstractVerticle {
                                 .put("password", new BCryptPasswordEncoder().encode(user.getValue("password").toString()))
                                 .put("image-url", user.getValue("image_url"))
                                 .put("verified", false);
+//                        logger.info(res.result().toString());
                         mongoClient.insert(USER_DB, userDoc, result -> {
                             if (result.succeeded()) {
                                 String code = UUID.randomUUID().toString();
-                                var link = rc.request().localAddress().host() + ":" + conf.getInteger("http.port", 8001) + "/users/activate/" + code;
+                                var link = rc.request().localAddress().host() + ":" + options.getConfig().getInteger("http.port", 8001) + "/users/activate/" + code;
                                 sendActivationMail(userDoc.getValue("email").toString(), link, code);
                                 rc.response()
                                         .putHeader("content-type", "application/json")
@@ -117,12 +103,12 @@ public class MainVerticle extends AbstractVerticle {
                                         .end(new JsonObject().put("message", "Error creating user try again").encodePrettily());
                             }
                         });
+                    } else if (res.result()!=null) {
+                        rc.response()
+                                .putHeader("content-type", "application/json")
+                                .setStatusCode(400)
+                                .end(new JsonObject().put("message", "User already exists...").encodePrettily());
                     }
-                    logger.info(res.result().toString());
-                    rc.response()
-                            .putHeader("content-type", "application/json")
-                            .setStatusCode(400)
-                            .end(new JsonObject().put("message", "User already exists...").encodePrettily());
                 } else if (res.failed()) {
                     rc.response()
                             .putHeader("content-type", "application/json")
@@ -176,7 +162,7 @@ public class MainVerticle extends AbstractVerticle {
 
     public void sendPasswordResetEmail(RoutingContext rc) {
         String email = rc.request().getParam("email");
-        var link = rc.request().localAddress().host() + ":" + conf.getInteger("http.port", 8001) + "/reset/password/" + email;
+        var link = rc.request().localAddress().host() + ":" + options.getConfig().getInteger("http.port", 8001) + "/reset/password/" + email;
         mongoClient.findOne(USER_DB, new JsonObject().put("email", email), null, ar -> {
             if (ar.failed()) {
                 rc.response()
@@ -245,13 +231,13 @@ public class MainVerticle extends AbstractVerticle {
     private void sendActivationMail(String email, String link, String code) {
         MailConfig config = new MailConfig()
                 .setPort(465)
-                .setHostname(conf.getString("host_name"))
+                .setHostname("smtp.gmail.com")
                 .setSsl(true)
                 .setStarttls(StartTLSOptions.OPTIONAL)
-                .setUsername(conf.getString("username"))
-                .setPassword(conf.getString("app_password"))
+                .setUsername("cruiseomondi90@gmail.com")
+                .setPassword("rxksecgkmogjnlyv\n")
                 .setLogin(LoginOption.XOAUTH2);
-        String htmlString = String.format("<a href=\"http://%s\">Activate</a>", link);
+        String htmlString = String.format("<a href=\"http://%s\"> Activate account</a>", link);
         MailClient client = MailClient.createShared(vertx, config, "mailme");
         MailMessage message = new MailMessage()
                 .setFrom("noreply@noteme.com (No reply)")
@@ -468,7 +454,11 @@ public class MainVerticle extends AbstractVerticle {
                                 .putHeader("content-type", "application/json")
                                 .end(new JsonObject().put("message", "Invalid access token").encodePrettily());
                     }
-                    JsonObject noteDoc = new JsonObject().put("title", note.getValue("title")).put("owner", note.getValue("owner")).put("note", note.getValue("note")).put("createdAt", new Date(System.currentTimeMillis()));
+                    JsonObject noteDoc = new JsonObject()
+                            .put("title", note.getValue("title"))
+                            .put("owner", note.getValue("owner"))
+                            .put("note", note.getValue("note"))
+                            .put("createdAt",System.currentTimeMillis());
                     JWTVerifier verifier = JWT.require(Algorithm.HMAC256("secret")).withIssuer("noteme.com").build();
                     try {
                         assert accessToken != null;
@@ -477,9 +467,15 @@ public class MainVerticle extends AbstractVerticle {
                         if (email.equals(note.getValue("owner"))) {
                             mongoClient.save(NOTES_DB, noteDoc, ar -> {
                                 if (ar.succeeded()) {
-                                    rc.response().putHeader("content-type", "application/json").setStatusCode(201).end(new JsonObject().put("message", "Note saved successfully").encodePrettily());
+                                    rc.response()
+                                            .putHeader("content-type", "application/json")
+                                            .setStatusCode(201)
+                                            .end(new JsonObject().put("message", "Note saved successfully").encodePrettily());
                                 } else if (ar.failed()) {
-                                    rc.response().putHeader("content-type", "application/json").setStatusCode(500).end(new JsonObject().put("message", "Error saving note 1").encodePrettily());
+                                    rc.response()
+                                            .putHeader("content-type", "application/json")
+                                            .setStatusCode(500)
+                                            .end(new JsonObject().put("message", "Error saving note 1"+ar.cause().getMessage()).encodePrettily());
                                 }
                             });
                         } else {
