@@ -2,6 +2,9 @@ import com.auth0.jwt.JWT;
 import com.auth0.jwt.JWTVerifier;
 import com.auth0.jwt.algorithms.Algorithm;
 import com.auth0.jwt.interfaces.DecodedJWT;
+import io.vertx.config.ConfigRetriever;
+import io.vertx.config.ConfigRetrieverOptions;
+import io.vertx.config.ConfigStoreOptions;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.DeploymentOptions;
 import io.vertx.core.Vertx;
@@ -25,11 +28,30 @@ public class MainVerticle extends AbstractVerticle {
     public static final String NOTES_DB = "notes";
     public static final String JWT_DB = "jwt";
     public static final String ACTIVATION_CODE_DB = "activation-code-db";
+    public static int PORT;
+    public static String APP_PASSWORD;
+    public static JsonObject conf;
 
     @Override
     public void start() throws Exception {
         super.start();
+        ConfigStoreOptions fileStore = new ConfigStoreOptions()
+                .setType("file")
+                .setOptional(true)
+                .setConfig(new JsonObject().put("host","http://127.0.0.1").put("port",9000).put("path","/conf"));
+        ConfigStoreOptions configStoreOptions = new ConfigStoreOptions().setType("sys");
+        ConfigRetrieverOptions configOptions = new ConfigRetrieverOptions().addStore(fileStore).addStore(configStoreOptions);
+        ConfigRetriever retriever = ConfigRetriever.create(vertx, configOptions);
         DeploymentOptions options = new DeploymentOptions().setConfig(new JsonObject().put("http.port", 8000));
+        retriever.getConfig(ar -> {
+            if (ar.succeeded()) {
+                conf = ar.result();
+//                PORT = ar.result().getInteger("http.port");
+//                APP_PASSWORD = ar.result().getString("app_password");
+            } else if (ar.failed()){
+                logger.error("ERROR: Configs did not load"+ar.cause().getMessage());
+            }
+        });
         JsonObject dbConfig = new JsonObject().put("db_name", "note_me").put("connection_string", "mongodb://localhost:27017");
         mongoClient = MongoClient.create(vertx, dbConfig);
         Router router = Router.router(vertx);
@@ -40,14 +62,16 @@ public class MainVerticle extends AbstractVerticle {
         router.put("/users/update/:email").handler(this::updateUserProfile);
         router.delete("/users/delete/:email").handler(this::deleteAccount);
         router.delete("/logout/:email").handler(this::logout);
+        router.post("/reset/password/:email").handler(this::resetPassword);
+        router.get("/reset/password/:email").handler(this::sendPasswordResetEmail);
         router.post("/notes/save").handler(this::saveNote);
         router.get("/notes").handler(this::getMyNotes);
         router.put("/notes/update").handler(this::updateNote);
         router.delete("/notes/delete").handler(this::deleteNotes);
-        vertx.createHttpServer().requestHandler(router).listen(options.getConfig().getInteger("http.port", 8001), ar -> {
+        vertx.createHttpServer().requestHandler(router).listen(conf.getInteger("http.port", 8001), ar -> {
             if (ar.succeeded()) {
-                System.out.println("> INFO: Server running on port:8000...");
-                logger.debug("> INFO: Server running on port:8000...");
+                System.out.println("> INFO: Server running on port: " + conf.getInteger("http.port", 8001));
+                logger.debug("> INFO: Server running on port: " + conf.getInteger("http.port", 8001));
             } else if (ar.failed()) {
                 System.out.println("> ERROR: Error starting server...");
                 logger.debug("> ERROR: Error starting server...");
@@ -58,7 +82,7 @@ public class MainVerticle extends AbstractVerticle {
     private void handlePing(RoutingContext rc) {
         rc.response().setStatusCode(200)
                 .putHeader("content-type", "application/json")
-                .end(new JsonObject().put("message", "Server running on port:8000").encodePrettily());
+                .end(new JsonObject().put("message", "Server running on port:" + conf.getInteger("http.port", 8001)).encodePrettily());
         logger.info("Ping route");
     }
 
@@ -79,7 +103,7 @@ public class MainVerticle extends AbstractVerticle {
                         mongoClient.insert(USER_DB, userDoc, result -> {
                             if (result.succeeded()) {
                                 String code = UUID.randomUUID().toString();
-                                var link = rc.request().localAddress().host() + ":8000/users/activate/" + code;
+                                var link = rc.request().localAddress().host() + ":" + conf.getInteger("http.port", 8001) + "/users/activate/" + code;
                                 sendActivationMail(userDoc.getValue("email").toString(), link, code);
                                 rc.response()
                                         .putHeader("content-type", "application/json")
@@ -150,15 +174,82 @@ public class MainVerticle extends AbstractVerticle {
         });
     }
 
+    public void sendPasswordResetEmail(RoutingContext rc) {
+        String email = rc.request().getParam("email");
+        var link = rc.request().localAddress().host() + ":" + conf.getInteger("http.port", 8001) + "/reset/password/" + email;
+        mongoClient.findOne(USER_DB, new JsonObject().put("email", email), null, ar -> {
+            if (ar.failed()) {
+                rc.response()
+                        .putHeader("content-type", "application/json")
+                        .setStatusCode(400)
+                        .end(new JsonObject().put("message", "Error occurred").encodePrettily());
+            } else {
+                if (ar.result() != null) {
+                    MailConfig config = new MailConfig()
+                            .setPort(465)
+                            .setHostname("smtp.gmail.com")
+                            .setSsl(true)
+                            .setStarttls(StartTLSOptions.OPTIONAL)
+                            .setUsername("cruiseomondi90@gmail.com")
+                            .setPassword("rxksecgkmogjnlyv\n")
+                            .setLogin(LoginOption.XOAUTH2);
+                    String htmlString = String.format("<a href=\"http://%s\">Reset password</a>", link);
+                    MailClient client = MailClient.createShared(vertx, config, "mailme");
+                    MailMessage message = new MailMessage()
+                            .setFrom("noreply@noteme.com (No reply)")
+                            .setTo(email)
+                            .setSubject("Account activation")
+                            .setText("Test message")
+                            .setHtml("Click link to activate account." + htmlString);
+                    client.sendMail(message, re -> {
+                        if (re.succeeded()) {
+                            logger.info("INFO: Mail sent");
+
+                        } else if (re.failed()) {
+                            logger.error("ERROR: Mail not sent");
+                        }
+                    });
+                } else {
+                    rc.response()
+                            .putHeader("content-type", "application/json")
+                            .setStatusCode(400)
+                            .end(new JsonObject().put("message", "Error occurred").encodePrettily());
+                }
+            }
+        });
+    }
+
+    public void resetPassword(RoutingContext rc) {
+        rc.request().bodyHandler(handler -> {
+            var reqBody = handler.toJsonObject();
+            String email = reqBody.getValue("email").toString();
+            mongoClient.findOne(USER_DB, new JsonObject().put("email", email), null, ar -> {
+                if (ar.failed()) {
+                    rc.response()
+                            .putHeader("content-type", "application/json")
+                            .setStatusCode(400)
+                            .end(new JsonObject().put("message", "Error occurred").encodePrettily());
+                } else {
+                    mongoClient.findOneAndUpdate(USER_DB, new JsonObject().put("email", email), new JsonObject().put("$set", reqBody), re -> {
+                        rc.response()
+                                .putHeader("content-type", "application/json")
+                                .setStatusCode(400)
+                                .end(new JsonObject().put("message", "Password reset successfully").encodePrettily());
+                    });
+                }
+            });
+        });
+    }
+
 
     private void sendActivationMail(String email, String link, String code) {
         MailConfig config = new MailConfig()
                 .setPort(465)
-                .setHostname("smtp.gmail.com")
+                .setHostname(conf.getString("host_name"))
                 .setSsl(true)
                 .setStarttls(StartTLSOptions.OPTIONAL)
-                .setUsername("cruiseomondi90@gmail.com")
-                .setPassword("rxksecgkmogjnlyv\n")
+                .setUsername(conf.getString("username"))
+                .setPassword(conf.getString("app_password"))
                 .setLogin(LoginOption.XOAUTH2);
         String htmlString = String.format("<a href=\"http://%s\">Activate</a>", link);
         MailClient client = MailClient.createShared(vertx, config, "mailme");
@@ -312,7 +403,7 @@ public class MainVerticle extends AbstractVerticle {
             JsonObject login = bodyHandler.toJsonObject();
             mongoClient.findOne(USER_DB, new JsonObject().put("email", login.getValue("email")), null, res -> {
                 if (res.succeeded() && Boolean.parseBoolean(res.result().getValue("verified").toString())) {
-                    if (res.result()!=null) {
+                    if (res.result() != null) {
                         if (new BCryptPasswordEncoder().matches(login.getValue("password").toString(), res.result().getString("password"))) {
                             Map<String, String> payload = new HashMap<>();
                             payload.put("email", res.result().getValue("email").toString());
@@ -348,9 +439,13 @@ public class MainVerticle extends AbstractVerticle {
         var email = rc.request().getParam("email");
         mongoClient.findOneAndDelete(JWT_DB, new JsonObject().put("owner", email), ar -> {
             if (ar.succeeded()) {
-                rc.response().putHeader("content-type", "application/json").setStatusCode(200).end(new JsonObject().put("message", "Logout successful").encodePrettily());
+                rc.response()
+                        .putHeader("content-type", "application/json")
+                        .setStatusCode(200).end(new JsonObject().put("message", "Logout successful").encodePrettily());
             } else if (ar.failed()) {
-                rc.response().putHeader("content-type", "application/json").setStatusCode(400).end(new JsonObject().put("message", "Logout unsuccessful").encodePrettily());
+                rc.response()
+                        .putHeader("content-type", "application/json")
+                        .setStatusCode(400).end(new JsonObject().put("message", "Logout unsuccessful").encodePrettily());
             }
         });
     }
@@ -360,12 +455,18 @@ public class MainVerticle extends AbstractVerticle {
             String accessToken = rc.request().getHeader("access-token");
             JsonObject note = bodyHandler.toJsonObject();
             if (accessToken == null) {
-                rc.response().setStatusCode(403).putHeader("content-type", "application/json").end(new JsonObject().put("message", "Access token not provided").encodePrettily());
+                rc.response()
+                        .setStatusCode(403)
+                        .putHeader("content-type", "application/json")
+                        .end(new JsonObject().put("message", "Access token not provided").encodePrettily());
             }
             mongoClient.findOne(JWT_DB, new JsonObject().put("owner", note.getValue("owner").toString()), null, results -> {
                 if (results.succeeded()) {
                     if (results.result() == null) {
-                        rc.response().setStatusCode(403).putHeader("content-type", "application/json").end(new JsonObject().put("message", "Invalid access token").encodePrettily());
+                        rc.response()
+                                .setStatusCode(403)
+                                .putHeader("content-type", "application/json")
+                                .end(new JsonObject().put("message", "Invalid access token").encodePrettily());
                     }
                     JsonObject noteDoc = new JsonObject().put("title", note.getValue("title")).put("owner", note.getValue("owner")).put("note", note.getValue("note")).put("createdAt", new Date(System.currentTimeMillis()));
                     JWTVerifier verifier = JWT.require(Algorithm.HMAC256("secret")).withIssuer("noteme.com").build();
@@ -396,7 +497,10 @@ public class MainVerticle extends AbstractVerticle {
     public void getMyNotes(@NotNull RoutingContext rc) {
         var jwt = rc.request().getHeader("access-token");
         if (jwt == null) {
-            rc.response().putHeader("content-type", "application/json").end(new JsonObject().put("message", "No access token provided").encodePrettily());
+            rc.response()
+                    .setStatusCode(403)
+                    .putHeader("content-type", "application/json")
+                    .end(new JsonObject().put("message", "No access token provided").encodePrettily());
         } else {
             JWTVerifier verifier = JWT.require(Algorithm.HMAC256("secret")).withIssuer("noteme.com").build();
             try {
@@ -404,13 +508,22 @@ public class MainVerticle extends AbstractVerticle {
                 var email = decodedJWT.getSubject();
                 mongoClient.find(NOTES_DB, new JsonObject().put("owner", email), ar -> {
                     if (ar.succeeded()) {
-                        rc.response().putHeader("content-type", "application/json").setStatusCode(200).end(new JsonObject().put("notes", ar.result()).encodePrettily());
+                        rc.response()
+                                .putHeader("content-type", "application/json")
+                                .setStatusCode(200)
+                                .end(new JsonObject().put("notes", ar.result()).encodePrettily());
                     } else if (ar.failed()) {
-                        rc.response().putHeader("content-type", "application/json").setStatusCode(503).end(new JsonObject().put("message", "Error getting notes").encodePrettily());
+                        rc.response()
+                                .putHeader("content-type", "application/json")
+                                .setStatusCode(503)
+                                .end(new JsonObject().put("message", "Error getting notes").encodePrettily());
                     }
                 });
             } catch (Exception e) {
-                rc.response().putHeader("content-type", "application/json").setStatusCode(500).end(new JsonObject().put("message", e.getMessage()).encodePrettily());
+                rc.response()
+                        .putHeader("content-type", "application/json")
+                        .setStatusCode(500)
+                        .end(new JsonObject().put("message", e.getMessage()).encodePrettily());
                 logger.error(e.getMessage());
             }
         }
@@ -431,20 +544,35 @@ public class MainVerticle extends AbstractVerticle {
                         if (ar.succeeded() && ar.result() != null) {
                             mongoClient.findOneAndUpdate(NOTES_DB, new JsonObject().put("_id", id), updateDoc, res -> {
                                 if (res.succeeded()) {
-                                    rc.response().putHeader("content-type", "application/json").setStatusCode(200).end(new JsonObject().put("message", "Note updated successfully").encodePrettily());
+                                    rc.response()
+                                            .putHeader("content-type", "application/json")
+                                            .setStatusCode(200)
+                                            .end(new JsonObject().put("message", "Note updated successfully").encodePrettily());
                                 } else if (res.failed()) {
-                                    rc.response().putHeader("content-type", "application/json").setStatusCode(400).end(new JsonObject().put("message", "Error updating note").encodePrettily());
+                                    rc.response()
+                                            .putHeader("content-type", "application/json")
+                                            .setStatusCode(400)
+                                            .end(new JsonObject().put("message", "Error updating note").encodePrettily());
                                 }
                             });
                         } else {
-                            rc.response().putHeader("content-type", "application/json").setStatusCode(400).end(new JsonObject().put("message", "Error occurred").encodePrettily());
+                            rc.response()
+                                    .putHeader("content-type", "application/json")
+                                    .setStatusCode(400)
+                                    .end(new JsonObject().put("message", "Error occurred").encodePrettily());
                         }
                     });
                 } else {
-                    rc.response().putHeader("content-type", "application/json").setStatusCode(403).end(new JsonObject().put("message", "Invalid request").encodePrettily());
+                    rc.response()
+                            .putHeader("content-type", "application/json")
+                            .setStatusCode(403)
+                            .end(new JsonObject().put("message", "Invalid request").encodePrettily());
                 }
             } catch (Exception e) {
-                rc.response().putHeader("content-type", "application/json").setStatusCode(500).end(new JsonObject().put("message", "Internal server error").encodePrettily());
+                rc.response()
+                        .putHeader("content-type", "application/json")
+                        .setStatusCode(500)
+                        .end(new JsonObject().put("message", "Internal server error").encodePrettily());
             }
         });
     }
@@ -454,7 +582,10 @@ public class MainVerticle extends AbstractVerticle {
             JsonObject body = bodyHandler.toJsonObject();
             var jwt = rc.request().getHeader("access-token");
             if (jwt == null) {
-                rc.response().putHeader("content-type", "application/json").setStatusCode(400).end(new JsonObject().put("message", "No access token provided").encodePrettily());
+                rc.response()
+                        .putHeader("content-type", "application/json")
+                        .setStatusCode(400)
+                        .end(new JsonObject().put("message", "No access token provided").encodePrettily());
             } else {
                 JWTVerifier verifier = JWT.require(Algorithm.HMAC256("secret")).withIssuer("noteme.com").build();
                 try {
@@ -463,16 +594,28 @@ public class MainVerticle extends AbstractVerticle {
                     if (email == body.getValue("owner")) {
                         mongoClient.findOneAndDelete(NOTES_DB, body, res -> {
                             if (res.succeeded()) {
-                                rc.response().putHeader("content-type", "application/json").setStatusCode(200).end(new JsonObject().put("message", "Note deleted successfully").encodePrettily());
+                                rc.response()
+                                        .putHeader("content-type", "application/json")
+                                        .setStatusCode(200)
+                                        .end(new JsonObject().put("message", "Note deleted successfully").encodePrettily());
                             } else if (res.failed()) {
-                                rc.response().putHeader("content-type", "application/json").setStatusCode(503).end(new JsonObject().put("message", "Error deleting note").encodePrettily());
+                                rc.response()
+                                        .putHeader("content-type", "application/json")
+                                        .setStatusCode(503)
+                                        .end(new JsonObject().put("message", "Error deleting note").encodePrettily());
                             }
                         });
                     } else {
-                        rc.response().putHeader("content-type", "application/json").setStatusCode(400).end(new JsonObject().put("message", "Action not permitted").encodePrettily());
+                        rc.response()
+                                .putHeader("content-type", "application/json")
+                                .setStatusCode(400)
+                                .end(new JsonObject().put("message", "Action not permitted").encodePrettily());
                     }
                 } catch (Exception e) {
-                    rc.response().putHeader("content-type", "application/json").setStatusCode(500).end(new JsonObject().put("message", "Error getting notes").encodePrettily());
+                    rc.response()
+                            .putHeader("content-type", "application/json")
+                            .setStatusCode(500)
+                            .end(new JsonObject().put("message", "Error getting notes").encodePrettily());
                 }
             }
         });
