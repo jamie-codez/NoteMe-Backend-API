@@ -112,3 +112,5 @@ lint/tmp/
 
 /src/requests/
 /src/config.yaml
+/src/Configure.java
+/src/Mail.java
