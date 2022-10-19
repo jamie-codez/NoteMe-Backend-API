@@ -48,8 +48,9 @@ public class MainVerticle extends AbstractVerticle {
         router.get("/users/activate/:code").handler(this::activateAccount);
         router.put("/users/update/:email").handler(this::updateUserProfile);
         router.delete("/users/delete/:email").handler(this::deleteAccount);
+        router.get("/reset/:email").handler(this::sendPage);
         router.delete("/logout/:email").handler(this::logout);
-        router.post("/reset/password/:email").handler(this::resetPassword);
+        router.post("/reset/:email").handler(this::resetPassword);
         router.get("/reset/password/:email").handler(this::sendPasswordResetEmail);
         router.post("/notes/save").handler(this::saveNote);
         router.get("/notes").handler(this::getMyNotes);
@@ -96,7 +97,7 @@ public class MainVerticle extends AbstractVerticle {
                                 rc.response()
                                         .putHeader("content-type", "application/json")
                                         .setStatusCode(201)
-                                        .end(new JsonObject().put("message", "User created successfully...\n" +
+                                        .end(new JsonObject().put("message", "User created successfully..." +
                                                 "Check your email to activate account and login to app").encodePrettily());
                             } else {
                                 rc.response()
@@ -161,10 +162,13 @@ public class MainVerticle extends AbstractVerticle {
             }
         });
     }
+    public void sendPage(RoutingContext rc){
+        rc.response().setStatusCode(200).sendFile("src/main/resources/static/passwordreset.html");
+    }
 
     public void sendPasswordResetEmail(RoutingContext rc) {
         String email = rc.request().getParam("email");
-        var link = rc.request().localAddress().host() + ":" + options.getConfig().getInteger("http.port", 8001) + "/reset/password/" + email;
+        var link = rc.request().localAddress().host() + ":" + options.getConfig().getInteger("http.port", 8001) + "/reset/" + email;
         mongoClient.findOne(USER_DB, new JsonObject().put("email", email), null, ar -> {
             if (ar.failed()) {
                 rc.response()
@@ -181,18 +185,21 @@ public class MainVerticle extends AbstractVerticle {
                             .setUsername("cruiseomondi90@gmail.com")
                             .setPassword("rxksecgkmogjnlyv\n")
                             .setLogin(LoginOption.XOAUTH2);
-                    String htmlString = String.format("<a href=\"http://%s\">Reset password</a>", link);
+                    String htmlString = String.format(" <a href=\"http://%s\">Reset password</a>", link);
                     MailClient client = MailClient.createShared(vertx, config, "mailme");
                     MailMessage message = new MailMessage()
                             .setFrom("noreply@noteme.com (No reply)")
                             .setTo(email)
-                            .setSubject("Account activation")
-                            .setText("Test message")
-                            .setHtml("Click link to activate account." + htmlString);
+                            .setSubject("Password reset")
+                            .setText("Password reset")
+                            .setHtml("Click link to reset password." + htmlString);
                     client.sendMail(message, re -> {
                         if (re.succeeded()) {
                             logger.info("INFO: Mail sent");
-
+                            rc.response()
+                                    .putHeader("content-type", "application/json")
+                                    .setStatusCode(200)
+                                    .end(new JsonObject().put("message", "Password reset email sent successfully\nCheck your inbox").encodePrettily());
                         } else if (re.failed()) {
                             logger.error("ERROR: Mail not sent");
                         }
@@ -210,7 +217,7 @@ public class MainVerticle extends AbstractVerticle {
     public void resetPassword(RoutingContext rc) {
         rc.request().bodyHandler(handler -> {
             var reqBody = handler.toJsonObject();
-            String email = reqBody.getValue("email").toString();
+            String email = rc.request().getParam("email");
             mongoClient.findOne(USER_DB, new JsonObject().put("email", email), null, ar -> {
                 if (ar.failed()) {
                     rc.response()
@@ -218,7 +225,8 @@ public class MainVerticle extends AbstractVerticle {
                             .setStatusCode(400)
                             .end(new JsonObject().put("message", "Error occurred").encodePrettily());
                 } else {
-                    mongoClient.findOneAndUpdate(USER_DB, new JsonObject().put("email", email), new JsonObject().put("$set", reqBody), re -> {
+                    var encryptedPass = new JsonObject().put("password",new BCryptPasswordEncoder().encode(reqBody.getValue("password").toString()));
+                    mongoClient.findOneAndUpdate(USER_DB, new JsonObject().put("email", email), new JsonObject().put("$set", encryptedPass), re -> {
                         rc.response()
                                 .putHeader("content-type", "application/json")
                                 .setStatusCode(400)
