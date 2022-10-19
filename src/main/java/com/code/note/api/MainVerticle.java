@@ -97,7 +97,7 @@ public class MainVerticle extends AbstractVerticle {
                                 rc.response()
                                         .putHeader("content-type", "application/json")
                                         .setStatusCode(201)
-                                        .end(new JsonObject().put("message", "User created successfully...\n" +
+                                        .end(new JsonObject().put("message", "User created successfully..." +
                                                 "Check your email to activate account and login to app").encodePrettily());
                             } else {
                                 rc.response()
