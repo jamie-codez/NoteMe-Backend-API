@@ -29,14 +29,18 @@ public class MainVerticle extends AbstractVerticle {
     public static final String ACTIVATION_CODE_DB = "activation-code-db";
     private DeploymentOptions options;
 
+    /**
+     * <p>This method is the entry point into the verticle</p>
+     * @throws Exception is thrown if verticle is not started successfully
+     */
     @Override
     public void start() throws Exception {
         super.start();
         options = new DeploymentOptions().setConfig(new JsonObject()
-                .put("http.port", 8000)
-                .put("host_name", "smtp.google.com")
-                .put("username", "cruiseomondi90@gmail.com")
-                .put("app_password", "rxksecgkmogjnlyv\n"));
+                .put("http.port", 8000));
+//                .put("host_name", "smtp.google.com")
+//                .put("username", "cruiseomondi90@gmail.com")
+//                .put("app_password", ));
         JsonObject dbConfig = new JsonObject()
                 .put("db_name", "note_me")
                 .put("connection_string", "mongodb://localhost:27017");
@@ -67,6 +71,10 @@ public class MainVerticle extends AbstractVerticle {
         });
     }
 
+    /**
+     * <p>This is the default root route</p>
+     * @param rc is the Routing context for this verticle
+     */
     private void handlePing(RoutingContext rc) {
         rc.response().setStatusCode(200)
                 .putHeader("content-type", "application/json")
@@ -74,10 +82,16 @@ public class MainVerticle extends AbstractVerticle {
         logger.info("Ping route");
     }
 
+    /**
+     * <p>This is the register method that registers a new user</p>
+     * @param rc is Routing context for this verticle
+     */
     public void register(@NotNull RoutingContext rc) {
         rc.request().bodyHandler(bodyHandler -> {
             JsonObject user = bodyHandler.toJsonObject();
-            // Check if user already exists
+            /**
+             * <p>Checking if user already exists</p>
+             */
             JsonObject query = new JsonObject().put("email", user.getValue("email").toString());
             mongoClient.findOne(USER_DB, query, null, res -> {
                 if (res.succeeded()) {
@@ -122,6 +136,10 @@ public class MainVerticle extends AbstractVerticle {
         });
     }
 
+    /**
+     * <p>This method is invoked if user clicks on email link to activate their account</p>
+     * @param rc is Routing context for this Verticle
+     */
     public void activateAccount(RoutingContext rc) {
         var token = rc.request().getParam("code");
         mongoClient.findOne(ACTIVATION_CODE_DB, new JsonObject().put("code", token), null, ar -> {
@@ -162,10 +180,19 @@ public class MainVerticle extends AbstractVerticle {
             }
         });
     }
+
+    /**
+     * <p>This method sends the reset password page to user upon when they click on the reset password link in their email upon password reset in app</p>
+     * @param rc is the Routing context in this verticle
+     */
     public void sendPage(RoutingContext rc){
         rc.response().setStatusCode(200).sendFile("src/main/resources/static/passwordreset.html");
     }
 
+    /**
+     * <p>This method sends an email to a user containing the password reset link to user. Every tome a request is sent a new and unique link is generated.</p>
+     * @param rc is the routing context in this verticle
+     */
     public void sendPasswordResetEmail(RoutingContext rc) {
         String email = rc.request().getParam("email");
         var link = rc.request().localAddress().host() + ":" + options.getConfig().getInteger("http.port", 8001) + "/reset/" + email;
@@ -214,6 +241,10 @@ public class MainVerticle extends AbstractVerticle {
         });
     }
 
+    /**
+     * <p>This method is used to reset password of an account upon request reset link is sent to email.</p>
+     * @param rc is the routing context in this verticle
+     */
     public void resetPassword(RoutingContext rc) {
         rc.request().bodyHandler(handler -> {
             var reqBody = handler.toJsonObject();
@@ -237,7 +268,12 @@ public class MainVerticle extends AbstractVerticle {
         });
     }
 
-
+    /**
+     * <p>This method send the account activation link to the users inbox</p>
+     * @param email is the email captured during registration
+     * @param link is the address containing the activation code
+     * @param code is unique code use to activate the account
+     */
     private void sendActivationMail(String email, String link, String code) {
         MailConfig config = new MailConfig()
                 .setPort(465)
@@ -271,6 +307,10 @@ public class MainVerticle extends AbstractVerticle {
         });
     }
 
+    /**
+     * <p>This method updates the user profile to the new details</p>
+     * @param rc is the routing context in this verticle
+     */
     public void updateUserProfile(RoutingContext rc) {
         rc.request().connection().localAddress().host();
         rc.request().bodyHandler(bodyHandler -> {
@@ -324,6 +364,10 @@ public class MainVerticle extends AbstractVerticle {
         });
     }
 
+    /**
+     * <p>This method deletes a specified user account upon request, You only delete your account</p>
+     * @param rc is the routing context in this verticle
+     */
     public void deleteAccount(RoutingContext rc) {
         var email = rc.request().getParam("email");
         var jwt = rc.request().getHeader("access-token");
@@ -376,6 +420,11 @@ public class MainVerticle extends AbstractVerticle {
 
     }
 
+    /**
+     * <p>This method save the user's JWT for authentication purposes</p>
+     * @param jwt, This is the user's JSON Web Token
+     * @param email, This is the user email associated with the JWT
+     */
     private void saveJwt(String jwt, String email) {
         mongoClient.findOne(JWT_DB, new JsonObject().put("owner", email), null, ar -> {
             if (ar.succeeded() && ar.result() == null) {
@@ -394,6 +443,10 @@ public class MainVerticle extends AbstractVerticle {
         });
     }
 
+    /**
+     * <p>This method is used to login and generate the auth JWT</p>
+     * @param rc is the routing context in this verticle
+     */
     public void login(@NotNull RoutingContext rc) {
         rc.request().bodyHandler(bodyHandler -> {
             JsonObject login = bodyHandler.toJsonObject();
@@ -431,6 +484,10 @@ public class MainVerticle extends AbstractVerticle {
         });
     }
 
+    /**
+     *<p>This method deletes the JWT and makes it invalid hence logging out</p>
+     * @param rc is the routing context in this verticle
+     */
     public void logout(@NotNull RoutingContext rc) {
         var email = rc.request().getParam("email");
         mongoClient.findOneAndDelete(JWT_DB, new JsonObject().put("owner", email), ar -> {
@@ -446,6 +503,10 @@ public class MainVerticle extends AbstractVerticle {
         });
     }
 
+    /**
+     * <p>This method save a note into the database with reference to the owner of the note</p>
+     * @param rc carries the payload i.e. the note,the owner of the note and auth token
+     */
     public void saveNote(@NotNull RoutingContext rc) {
         rc.request().bodyHandler(bodyHandler -> {
             String accessToken = rc.request().getHeader("access-token");
@@ -500,6 +561,10 @@ public class MainVerticle extends AbstractVerticle {
         });
     }
 
+    /**
+     * <p>This get all notes associated with a user and returns them in the  body of the response in JSON form</p>
+     * @param rc carries the authentication payload  and the owner of the notes.
+     */
     public void getMyNotes(@NotNull RoutingContext rc) {
         var jwt = rc.request().getHeader("access-token");
         if (jwt == null) {
@@ -535,6 +600,10 @@ public class MainVerticle extends AbstractVerticle {
         }
     }
 
+    /**
+     * <p>This updates a users note</p>
+     * @param rc carries the body of the note to be updated together with the auth payload
+     */
     public void updateNote(@NotNull RoutingContext rc) {
         rc.request().bodyHandler(bodyHandler -> {
             JsonObject update = bodyHandler.toJsonObject();
@@ -583,6 +652,11 @@ public class MainVerticle extends AbstractVerticle {
         });
     }
 
+    /**
+     * <p>This method deletes a note form the users notes</p>
+     * @param rc carries the body of the request together with the jwt payload. If note is found is deleted if not error
+     *          returned as response
+     */
     public void deleteNotes(@NotNull RoutingContext rc) {
         rc.request().bodyHandler(bodyHandler -> {
             JsonObject body = bodyHandler.toJsonObject();
@@ -628,11 +702,19 @@ public class MainVerticle extends AbstractVerticle {
     }
 
 
+    /**
+     * <p>This stops the verticle upon invocation</p>
+     * @throws Exception is thrown if it fails
+     */
     @Override
     public void stop() throws Exception {
         super.stop();
     }
 
+    /**
+     * <p>This deploys the verticles</p>
+     * @param args passed for configuration are accepted in this method
+     */
     public static void main(String[] args) {
         MainVerticle verticle = new MainVerticle();
         vertx.deployVerticle(verticle);
