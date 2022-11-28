@@ -1,0 +1,10 @@
+PUT http://localhost:8000/note/update
+Content-Type: application/json
+access-token: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJqYW1lc0BobWFpbC5jb20iLCJpc3MiOiJub3RlbWUuY29tIiwiZW1haWwiOiJqYW1lc0BobWFpbC5jb20ifQ.HRt-5mhjFd0UAmq0UIrsWxs2AgWVxFYRdQz-bnOzPWs
+
+{
+  "_id": "633f232ed576331390c83177",
+  "title": "Title test update",
+  "owner": "james@hmail.com",
+  "note": "This is a test note update"
+}
