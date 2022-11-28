@@ -31,16 +31,17 @@ public class MainVerticle extends AbstractVerticle {
 
     /**
      * <p>This method is the entry point into the verticle</p>
+     *
      * @throws Exception is thrown if verticle is not started successfully
      */
     @Override
     public void start() throws Exception {
         super.start();
         options = new DeploymentOptions().setConfig(new JsonObject()
-                .put("http.port", 8000));
-//                .put("host_name", "smtp.google.com")
-//                .put("username", "cruiseomondi90@gmail.com")
-//                .put("app_password", ));
+                .put("http.port", 8000)
+                .put("host_name", "smtp.google.com")
+                .put("username", "cruiseomondi90@gmail.com")
+                .put("app_password", "stbavcawmiaellel\n"));
         JsonObject dbConfig = new JsonObject()
                 .put("db_name", "note_me")
                 .put("connection_string", "mongodb://localhost:27017");
@@ -50,6 +51,7 @@ public class MainVerticle extends AbstractVerticle {
         router.post("/register").handler(this::register);
         router.post("/login").handler(this::login);
         router.get("/users/activate/:code").handler(this::activateAccount);
+        router.get("/users/:email").handler(this::getUser);
         router.put("/users/update/:email").handler(this::updateUserProfile);
         router.delete("/users/delete/:email").handler(this::deleteAccount);
         router.get("/reset/:email").handler(this::sendPage);
@@ -71,8 +73,52 @@ public class MainVerticle extends AbstractVerticle {
         });
     }
 
+    private void getUser(RoutingContext rc) {
+        var jwt = rc.request().getHeader("access-token");
+        var emailQ = rc.request().getParam("email");
+        if (jwt == null) {
+            rc.response()
+                    .setStatusCode(403)
+                    .putHeader("content-type", "application/json")
+                    .end(new JsonObject().put("message", "No access token provided").encodePrettily());
+        } else {
+            JWTVerifier verifier = JWT.require(Algorithm.HMAC256("secret")).withIssuer("noteme.com").build();
+            try {
+                DecodedJWT decodedJWT = verifier.verify(jwt);
+                var email = decodedJWT.getSubject();
+                if (emailQ.equals(email)) {
+                    mongoClient.findOne(USER_DB, new JsonObject().put("email", email),null, ar -> {
+                        if (ar.succeeded()) {
+                            rc.response()
+                                    .putHeader("content-type", "application/json")
+                                    .setStatusCode(200)
+                                    .end(new JsonObject().put("user", ar.result()).encodePrettily());
+                        } else if (ar.failed()) {
+                            rc.response()
+                                    .putHeader("content-type", "application/json")
+                                    .setStatusCode(503)
+                                    .end(new JsonObject().put("message", "Error getting user").encodePrettily());
+                        }
+                    });
+                }else {
+                    rc.response()
+                            .putHeader("content-type", "application/json")
+                            .setStatusCode(503)
+                            .end(new JsonObject().put("message", "Error getting user").encodePrettily());
+                }
+            } catch (Exception e) {
+                rc.response()
+                        .putHeader("content-type", "application/json")
+                        .setStatusCode(500)
+                        .end(new JsonObject().put("message", e.getMessage()).encodePrettily());
+                logger.error(e.getMessage());
+            }
+        }
+    }
+
     /**
      * <p>This is the default root route</p>
+     *
      * @param rc is the Routing context for this verticle
      */
     private void handlePing(RoutingContext rc) {
@@ -84,6 +130,7 @@ public class MainVerticle extends AbstractVerticle {
 
     /**
      * <p>This is the register method that registers a new user</p>
+     *
      * @param rc is Routing context for this verticle
      */
     public void register(@NotNull RoutingContext rc) {
@@ -120,7 +167,7 @@ public class MainVerticle extends AbstractVerticle {
                                         .end(new JsonObject().put("message", "Error creating user try again").encodePrettily());
                             }
                         });
-                    } else if (res.result()!=null) {
+                    } else if (res.result() != null) {
                         rc.response()
                                 .putHeader("content-type", "application/json")
                                 .setStatusCode(400)
@@ -138,6 +185,7 @@ public class MainVerticle extends AbstractVerticle {
 
     /**
      * <p>This method is invoked if user clicks on email link to activate their account</p>
+     *
      * @param rc is Routing context for this Verticle
      */
     public void activateAccount(RoutingContext rc) {
@@ -183,14 +231,16 @@ public class MainVerticle extends AbstractVerticle {
 
     /**
      * <p>This method sends the reset password page to user upon when they click on the reset password link in their email upon password reset in app</p>
+     *
      * @param rc is the Routing context in this verticle
      */
-    public void sendPage(RoutingContext rc){
+    public void sendPage(RoutingContext rc) {
         rc.response().setStatusCode(200).sendFile("src/main/resources/static/passwordreset.html");
     }
 
     /**
      * <p>This method sends an email to a user containing the password reset link to user. Every tome a request is sent a new and unique link is generated.</p>
+     *
      * @param rc is the routing context in this verticle
      */
     public void sendPasswordResetEmail(RoutingContext rc) {
@@ -203,6 +253,8 @@ public class MainVerticle extends AbstractVerticle {
                         .setStatusCode(400)
                         .end(new JsonObject().put("message", "Error occurred").encodePrettily());
             } else {
+//                .put("username", "owenrichson20@gmail.com\n")
+//                        .put("app_password", "owenrichson20@gmail.com\n"));
                 if (ar.result() != null) {
                     MailConfig config = new MailConfig()
                             .setPort(465)
@@ -210,7 +262,7 @@ public class MainVerticle extends AbstractVerticle {
                             .setSsl(true)
                             .setStarttls(StartTLSOptions.OPTIONAL)
                             .setUsername("cruiseomondi90@gmail.com")
-                            .setPassword("rxksecgkmogjnlyv\n")
+                            .setPassword("stbavcawmiaellel\n")
                             .setLogin(LoginOption.XOAUTH2);
                     String htmlString = String.format(" <a href=\"http://%s\">Reset password</a>", link);
                     MailClient client = MailClient.createShared(vertx, config, "mailme");
@@ -243,6 +295,7 @@ public class MainVerticle extends AbstractVerticle {
 
     /**
      * <p>This method is used to reset password of an account upon request reset link is sent to email.</p>
+     *
      * @param rc is the routing context in this verticle
      */
     public void resetPassword(RoutingContext rc) {
@@ -256,7 +309,7 @@ public class MainVerticle extends AbstractVerticle {
                             .setStatusCode(400)
                             .end(new JsonObject().put("message", "Error occurred").encodePrettily());
                 } else {
-                    var encryptedPass = new JsonObject().put("password",new BCryptPasswordEncoder().encode(reqBody.getValue("password").toString()));
+                    var encryptedPass = new JsonObject().put("password", new BCryptPasswordEncoder().encode(reqBody.getValue("password").toString()));
                     mongoClient.findOneAndUpdate(USER_DB, new JsonObject().put("email", email), new JsonObject().put("$set", encryptedPass), re -> {
                         rc.response()
                                 .putHeader("content-type", "application/json")
@@ -270,9 +323,10 @@ public class MainVerticle extends AbstractVerticle {
 
     /**
      * <p>This method send the account activation link to the users inbox</p>
+     *
      * @param email is the email captured during registration
-     * @param link is the address containing the activation code
-     * @param code is unique code use to activate the account
+     * @param link  is the address containing the activation code
+     * @param code  is unique code use to activate the account
      */
     private void sendActivationMail(String email, String link, String code) {
         MailConfig config = new MailConfig()
@@ -281,7 +335,7 @@ public class MainVerticle extends AbstractVerticle {
                 .setSsl(true)
                 .setStarttls(StartTLSOptions.OPTIONAL)
                 .setUsername("cruiseomondi90@gmail.com")
-                .setPassword("rxksecgkmogjnlyv\n")
+                .setPassword("stbavcawmiaellel\n")
                 .setLogin(LoginOption.XOAUTH2);
         String htmlString = String.format("<a href=\"http://%s\"> Activate account</a>", link);
         MailClient client = MailClient.createShared(vertx, config, "mailme");
@@ -289,7 +343,7 @@ public class MainVerticle extends AbstractVerticle {
                 .setFrom("noreply@noteme.com (No reply)")
                 .setTo(email)
                 .setSubject("Account activation")
-                .setText("Test message")
+                .setText("Account activation")
                 .setHtml("Click link to activate account." + htmlString);
         client.sendMail(message, ar -> {
             if (ar.succeeded()) {
@@ -309,6 +363,7 @@ public class MainVerticle extends AbstractVerticle {
 
     /**
      * <p>This method updates the user profile to the new details</p>
+     *
      * @param rc is the routing context in this verticle
      */
     public void updateUserProfile(RoutingContext rc) {
@@ -366,6 +421,7 @@ public class MainVerticle extends AbstractVerticle {
 
     /**
      * <p>This method deletes a specified user account upon request, You only delete your account</p>
+     *
      * @param rc is the routing context in this verticle
      */
     public void deleteAccount(RoutingContext rc) {
@@ -422,7 +478,8 @@ public class MainVerticle extends AbstractVerticle {
 
     /**
      * <p>This method save the user's JWT for authentication purposes</p>
-     * @param jwt, This is the user's JSON Web Token
+     *
+     * @param jwt,   This is the user's JSON Web Token
      * @param email, This is the user email associated with the JWT
      */
     private void saveJwt(String jwt, String email) {
@@ -445,6 +502,7 @@ public class MainVerticle extends AbstractVerticle {
 
     /**
      * <p>This method is used to login and generate the auth JWT</p>
+     *
      * @param rc is the routing context in this verticle
      */
     public void login(@NotNull RoutingContext rc) {
@@ -485,7 +543,8 @@ public class MainVerticle extends AbstractVerticle {
     }
 
     /**
-     *<p>This method deletes the JWT and makes it invalid hence logging out</p>
+     * <p>This method deletes the JWT and makes it invalid hence logging out</p>
+     *
      * @param rc is the routing context in this verticle
      */
     public void logout(@NotNull RoutingContext rc) {
@@ -505,6 +564,7 @@ public class MainVerticle extends AbstractVerticle {
 
     /**
      * <p>This method save a note into the database with reference to the owner of the note</p>
+     *
      * @param rc carries the payload i.e. the note,the owner of the note and auth token
      */
     public void saveNote(@NotNull RoutingContext rc) {
@@ -529,7 +589,7 @@ public class MainVerticle extends AbstractVerticle {
                             .put("title", note.getValue("title"))
                             .put("owner", note.getValue("owner"))
                             .put("note", note.getValue("note"))
-                            .put("createdAt",System.currentTimeMillis());
+                            .put("createdAt", System.currentTimeMillis());
                     JWTVerifier verifier = JWT.require(Algorithm.HMAC256("secret")).withIssuer("noteme.com").build();
                     try {
                         assert accessToken != null;
@@ -546,7 +606,7 @@ public class MainVerticle extends AbstractVerticle {
                                     rc.response()
                                             .putHeader("content-type", "application/json")
                                             .setStatusCode(500)
-                                            .end(new JsonObject().put("message", "Error saving note 1"+ar.cause().getMessage()).encodePrettily());
+                                            .end(new JsonObject().put("message", "Error saving note 1" + ar.cause().getMessage()).encodePrettily());
                                 }
                             });
                         } else {
@@ -563,6 +623,7 @@ public class MainVerticle extends AbstractVerticle {
 
     /**
      * <p>This get all notes associated with a user and returns them in the  body of the response in JSON form</p>
+     *
      * @param rc carries the authentication payload  and the owner of the notes.
      */
     public void getMyNotes(@NotNull RoutingContext rc) {
@@ -602,6 +663,7 @@ public class MainVerticle extends AbstractVerticle {
 
     /**
      * <p>This updates a users note</p>
+     *
      * @param rc carries the body of the note to be updated together with the auth payload
      */
     public void updateNote(@NotNull RoutingContext rc) {
@@ -654,8 +716,9 @@ public class MainVerticle extends AbstractVerticle {
 
     /**
      * <p>This method deletes a note form the users notes</p>
+     *
      * @param rc carries the body of the request together with the jwt payload. If note is found is deleted if not error
-     *          returned as response
+     *           returned as response
      */
     public void deleteNotes(@NotNull RoutingContext rc) {
         rc.request().bodyHandler(bodyHandler -> {
@@ -704,6 +767,7 @@ public class MainVerticle extends AbstractVerticle {
 
     /**
      * <p>This stops the verticle upon invocation</p>
+     *
      * @throws Exception is thrown if it fails
      */
     @Override
@@ -713,6 +777,7 @@ public class MainVerticle extends AbstractVerticle {
 
     /**
      * <p>This deploys the verticles</p>
+     *
      * @param args passed for configuration are accepted in this method
      */
     public static void main(String[] args) {

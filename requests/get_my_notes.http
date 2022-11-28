@@ -1,0 +1,3 @@
+GET http://localhost:8000/notes/
+Content-Type: application/json
+access-token: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJvd2VucmljaHNvbjIwQGdtYWlsLmNvbSIsImlzcyI6Im5vdGVtZS5jb20iLCJlbWFpbCI6Im93ZW5yaWNoc29uMjBAZ21haWwuY29tIn0.OteqlXu2wP8I3vKoOivXzKPDceSQVp8K2H9FlM5nCsA

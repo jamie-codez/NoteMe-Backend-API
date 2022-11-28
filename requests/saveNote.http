@@ -1,11 +1,11 @@
-POST http://localhost:8000/note/save
+POST http://localhost:8000/notes/save
 Content-Type: application/json
-access-token: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJqYW1lc0BobWFpbC5jb20iLCJpc3MiOiJub3RlbWUuY29tIiwiZW1haWwiOiJqYW1lc0BobWFpbC5jb20ifQ.HRt-5mhjFd0UAmq0UIrsWxs2AgWVxFYRdQz-bnOzPWs
+access-token: eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJvd2VucmljaHNvbjIwQGdtYWlsLmNvbSIsImlzcyI6Im5vdGVtZS5jb20iLCJlbWFpbCI6Im93ZW5yaWNoc29uMjBAZ21haWwuY29tIn0.OteqlXu2wP8I3vKoOivXzKPDceSQVp8K2H9FlM5nCsA
 
 
 {
   "title": "Title test",
-  "owner": "james@hmail.com",
+  "owner": "owenrichson20@gmail.com",
   "note": "This is a test note",
   "created": ""
 }
