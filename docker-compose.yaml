@@ -1,0 +1,20 @@
+version: "3"
+services:
+  mongodb:
+    container_name: mongodb
+    image: mongo:latest
+    restart: always
+    port:
+     - "27017:27017"
+  
+  note_me_api:
+    container_name: note_me_api
+    build: .
+    restart: always
+    depends_on:
+      mongodb:
+        condition: starts_successfully
+    port:
+      - "80:8080"
+    links: 
+      - mongodb
